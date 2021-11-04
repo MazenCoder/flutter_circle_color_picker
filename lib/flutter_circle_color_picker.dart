@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -5,14 +6,28 @@ import 'package:flutter/widgets.dart';
 
 typedef ColorCodeBuilder = Widget Function(BuildContext context, Color color);
 
+class CircleColorPickerController extends ChangeNotifier {
+  CircleColorPickerController({
+    Color initialColor = const Color.fromARGB(255, 255, 0, 0),
+  }) : _color = initialColor;
+
+  Color _color;
+  Color get color => _color;
+  set color(Color color) {
+    _color = color;
+    notifyListeners();
+  }
+}
+
 class CircleColorPicker extends StatefulWidget {
   const CircleColorPicker({
-    Key key,
+    Key? key,
     this.onChanged,
+    this.onEnded,
     this.size = const Size(280, 280),
     this.strokeWidth = 2,
     this.thumbSize = 32,
-    this.initialColor = const Color.fromARGB(255, 255, 0, 0),
+    this.controller,
     this.textStyle = const TextStyle(
       fontSize: 24,
       fontWeight: FontWeight.bold,
@@ -24,7 +39,17 @@ class CircleColorPicker extends StatefulWidget {
   /// Called during a drag when the user is selecting a color.
   ///
   /// This callback called with latest color that user selected.
-  final ValueChanged<Color> onChanged;
+  final ValueChanged<Color>? onChanged;
+
+  /// Called when drag ended.
+  ///
+  /// This callback called with latest color that user selected.
+  final ValueChanged<Color>? onEnded;
+
+  /// An object to controll picker color dynamically.
+  ///
+  /// Provide initialColor if needed.
+  final CircleColorPickerController? controller;
 
   /// The size of widget.
   /// Draggable area is thumb widget is included to the size,
@@ -43,12 +68,6 @@ class CircleColorPicker extends StatefulWidget {
   /// Default value is 32.
   final double thumbSize;
 
-  /// Initial color for picker.
-  /// [onChanged] callback won't be called with initial value.
-  ///
-  /// Default value is Red.
-  final Color initialColor;
-
   /// Text style config
   ///
   /// Default value is Black
@@ -58,7 +77,10 @@ class CircleColorPicker extends StatefulWidget {
   /// This functions is called every time color changed.
   ///
   /// Default is Text widget that shows rgb strings;
-  final ColorCodeBuilder colorCodeBuilder;
+  final ColorCodeBuilder? colorCodeBuilder;
+
+  Color get initialColor =>
+      controller?.color ?? const Color.fromARGB(255, 255, 0, 0);
 
   double get initialLightness => HSLColor.fromColor(initialColor).lightness;
 
@@ -70,8 +92,8 @@ class CircleColorPicker extends StatefulWidget {
 
 class _CircleColorPickerState extends State<CircleColorPicker>
     with TickerProviderStateMixin {
-  AnimationController _lightnessController;
-  AnimationController _hueController;
+  late AnimationController _lightnessController;
+  late AnimationController _hueController;
 
   Color get _color {
     return HSLColor.fromAHSL(
@@ -85,82 +107,78 @@ class _CircleColorPickerState extends State<CircleColorPicker>
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: widget.size.width+140,
-      height: widget.size.height+140,
+      width: widget.size.width+90,
+      height: widget.size.height+90,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Stack(
             alignment: Alignment.center,
             children: <Widget>[
-              Align(
-                alignment: Alignment.center,
-                child: _HuePicker(
-                  initialHue: widget.initialHue,
-                  size: widget.size,
-                  strokeWidth: widget.strokeWidth,
-                  thumbSize: widget.thumbSize,
-                  onChanged: (hue) {
-                    _hueController.value = hue * 180 / pi;
-                  },
-                ),
+              _HuePicker(
+                hue: _hueController.value,
+                size: widget.size,
+                strokeWidth: widget.strokeWidth,
+                thumbSize: widget.thumbSize,
+                onEnded: _onEnded,
+                onChanged: (hue) {
+                  _hueController.value = hue;
+                },
               ),
-
-              Align(
-                alignment: Alignment.center,
-                child: AnimatedBuilder(
-                  animation: _hueController,
-                  builder: (context, child) {
-                    return AnimatedBuilder(
-                      animation: _lightnessController,
-                      builder: (context, _) {
-                        return Center(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              // widget.colorCodeBuilder != null
-                              //     ? widget.colorCodeBuilder(context, _color)
-                              //     : Text(
-                              //   '#${_color.value.toRadixString(16).substring(2)}',
-                              //   style: widget.textStyle,
-                              // ),
-                              // const SizedBox(height: 16),
-                              Container(
-                                width: 64,
-                                height: 64,
-                                decoration: BoxDecoration(
-                                  color: _color,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    width: 3,
-                                    color: HSLColor.fromColor(_color)
-                                        .withLightness(
-                                      _lightnessController.value * 4 / 5,
-                                    ).toColor(),
-                                  ),
+              AnimatedBuilder(
+                animation: _hueController,
+                builder: (context, child) {
+                  return AnimatedBuilder(
+                    animation: _lightnessController,
+                    builder: (context, _) {
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            // widget.colorCodeBuilder != null
+                            //     ? widget.colorCodeBuilder!(context, _color)
+                            //     : Text(
+                            //   '#${_color.value.toRadixString(16).substring(2)}',
+                            //   style: widget.textStyle,
+                            // ),
+                            // const SizedBox(height: 16),
+                            Container(
+                              width: 64,
+                              height: 64,
+                              decoration: BoxDecoration(
+                                color: _color,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  width: 3,
+                                  color: HSLColor.fromColor(_color)
+                                      .withLightness(
+                                    _lightnessController.value * 4 / 5,
+                                  )
+                                      .toColor(),
                                 ),
                               ),
-                              // const SizedBox(height: 16),
-                            ],
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
             ],
           ),
+
           const SizedBox(height: 16),
           _LightnessSlider(
-            initialLightness: widget.initialLightness,
             width: 140,
             thumbSize: 26,
             hue: _hueController.value,
+            lightness: _lightnessController.value,
+            onEnded: _onEnded,
             onChanged: (lightness) {
               _lightnessController.value = lightness;
             },
@@ -185,32 +203,55 @@ class _CircleColorPickerState extends State<CircleColorPicker>
       lowerBound: 0,
       upperBound: 1,
     )..addListener(_onColorChanged);
+    widget.controller?.addListener(_setColor);
+  }
+
+  @override
+  void dispose() {
+    widget.controller?.removeListener(_setColor);
+    super.dispose();
   }
 
   void _onColorChanged() {
     widget.onChanged?.call(_color);
+    widget.controller?.color = _color;
+  }
+
+  void _onEnded() {
+    widget.onEnded?.call(_color);
+  }
+
+  void _setColor() {
+    if (widget.controller != null && widget.controller!.color != _color) {
+      final hslColor = HSLColor.fromColor(widget.controller!.color);
+      _hueController.value = hslColor.hue;
+      _lightnessController.value = hslColor.lightness;
+    }
   }
 }
 
 class _LightnessSlider extends StatefulWidget {
   const _LightnessSlider({
-    Key key,
-    this.hue,
-    this.width,
-    this.onChanged,
-    this.thumbSize,
-    this.initialLightness,
+    Key? key,
+    required this.hue,
+    required this.lightness,
+    required this.width,
+    required this.onChanged,
+    required this.onEnded,
+    required this.thumbSize,
   }) : super(key: key);
 
   final double hue;
+
+  final double lightness;
 
   final double width;
 
   final ValueChanged<double> onChanged;
 
-  final double thumbSize;
+  final VoidCallback onEnded;
 
-  final double initialLightness;
+  final double thumbSize;
 
   @override
   _LightnessSliderState createState() => _LightnessSliderState();
@@ -218,15 +259,20 @@ class _LightnessSlider extends StatefulWidget {
 
 class _LightnessSliderState extends State<_LightnessSlider>
     with TickerProviderStateMixin {
-  AnimationController _lightnessController;
-  AnimationController _scaleController;
+  late AnimationController _scaleController;
+  Timer? _cancelTimer;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onPanStart: _onPanStart,
-      onPanUpdate: _onPanUpdate,
-      onPanEnd: _onPanEnd,
+      onPanDown: _onDown,
+      onPanCancel: _onCancel,
+      onHorizontalDragStart: _onStart,
+      onHorizontalDragUpdate: _onUpdate,
+      onHorizontalDragEnd: _onEnd,
+      onVerticalDragStart: _onStart,
+      onVerticalDragUpdate: _onUpdate,
+      onVerticalDragEnd: _onEnd,
       child: SizedBox(
         width: widget.width,
         height: widget.thumbSize,
@@ -251,26 +297,20 @@ class _LightnessSliderState extends State<_LightnessSlider>
                 ),
               ),
             ),
-            AnimatedBuilder(
-              animation: _lightnessController,
-              builder: (context, child) {
-                return Positioned(
-                  left: _lightnessController.value *
-                      (widget.width - widget.thumbSize),
-                  child: ScaleTransition(
-                    scale: _scaleController,
-                    child: _Thumb(
-                      size: widget.thumbSize,
-                      color: HSLColor.fromAHSL(
-                        1,
-                        widget.hue,
-                        1,
-                        _lightnessController.value,
-                      ).toColor(),
-                    ),
-                  ),
-                );
-              },
+            Positioned(
+              left: widget.lightness * (widget.width - widget.thumbSize),
+              child: ScaleTransition(
+                scale: _scaleController,
+                child: _Thumb(
+                  size: widget.thumbSize,
+                  color: HSLColor.fromAHSL(
+                    1,
+                    widget.hue,
+                    1,
+                    widget.lightness,
+                  ).toColor(),
+                ),
+              ),
             ),
           ],
         ),
@@ -281,10 +321,6 @@ class _LightnessSliderState extends State<_LightnessSlider>
   @override
   void initState() {
     super.initState();
-    _lightnessController = AnimationController(
-      vsync: this,
-      value: widget.initialLightness,
-    )..addListener(() => widget.onChanged(_lightnessController.value));
     _scaleController = AnimationController(
       vsync: this,
       value: 1,
@@ -294,31 +330,54 @@ class _LightnessSliderState extends State<_LightnessSlider>
     );
   }
 
-  void _onPanStart(DragStartDetails details) {
+  void _onDown(DragDownDetails details) {
     _scaleController.reverse();
-    _lightnessController.value = details.localPosition.dx / widget.width;
+    widget.onChanged(details.localPosition.dx / widget.width);
   }
 
-  void _onPanUpdate(DragUpdateDetails details) {
-    _lightnessController.value = details.localPosition.dx / widget.width;
+  void _onStart(DragStartDetails details) {
+    _cancelTimer?.cancel();
+    _cancelTimer = null;
+    widget.onChanged(details.localPosition.dx / widget.width);
   }
 
-  void _onPanEnd(DragEndDetails details) {
+  void _onUpdate(DragUpdateDetails details) {
+    widget.onChanged(details.localPosition.dx / widget.width);
+  }
+
+  void _onEnd(DragEndDetails details) {
     _scaleController.forward();
+    widget.onEnded();
+  }
+
+  void _onCancel() {
+    // ScaleDown Animation cancelled if onDragStart called immediately
+    _cancelTimer = Timer(
+      const Duration(milliseconds: 5),
+      () {
+        _scaleController.forward();
+        widget.onEnded();
+      },
+    );
   }
 }
 
 class _HuePicker extends StatefulWidget {
   const _HuePicker({
-    Key key,
-    this.onChanged,
-    this.size,
-    this.strokeWidth,
-    this.thumbSize,
-    this.initialHue,
+    Key? key,
+    required this.hue,
+    required this.onChanged,
+    required this.onEnded,
+    required this.size,
+    required this.strokeWidth,
+    required this.thumbSize,
   }) : super(key: key);
 
+  final double hue;
+
   final ValueChanged<double> onChanged;
+
+  final VoidCallback onEnded;
 
   final Size size;
 
@@ -326,23 +385,29 @@ class _HuePicker extends StatefulWidget {
 
   final double thumbSize;
 
-  final double initialHue;
-
   @override
   _HuePickerState createState() => _HuePickerState();
 }
 
 class _HuePickerState extends State<_HuePicker> with TickerProviderStateMixin {
-  AnimationController _hueController;
-  AnimationController _scaleController;
-  Animation<Offset> _offset;
+  late AnimationController _scaleController;
+  Timer? _cancelTimer;
 
   @override
   Widget build(BuildContext context) {
+    final minSize = min(widget.size.width, widget.size.height);
+    final offset = _CircleTween(
+      minSize / 2 - widget.thumbSize / 2,
+    ).lerp(widget.hue * pi / 180);
     return GestureDetector(
-      onPanStart: _onPanStart,
-      onPanUpdate: _onPanUpdate,
-      onPanEnd: _onPanEnd,
+      onPanDown: _onDown,
+      onPanCancel: _onCancel,
+      onHorizontalDragStart: _onStart,
+      onHorizontalDragUpdate: _onUpdate,
+      onHorizontalDragEnd: _onEnd,
+      onVerticalDragStart: _onStart,
+      onVerticalDragUpdate: _onUpdate,
+      onVerticalDragEnd: _onEnd,
       child: SizedBox(
         width: widget.size.width,
         height: widget.size.height,
@@ -358,27 +423,15 @@ class _HuePickerState extends State<_HuePicker> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            AnimatedBuilder(
-              animation: _offset,
-              builder: (context, child) {
-                return Positioned(
-                  left: _offset.value.dx,
-                  top: _offset.value.dy,
-                  child: child,
-                );
-              },
-              child: AnimatedBuilder(
-                animation: _hueController,
-                builder: (context, child) {
-                  final hue = _hueController.value * (180 / pi);
-                  return ScaleTransition(
-                    scale: _scaleController,
-                    child: _Thumb(
-                      size: widget.thumbSize,
-                      color: HSLColor.fromAHSL(1, hue, 1, 0.5).toColor(),
-                    ),
-                  );
-                },
+            Positioned(
+              left: offset.dx,
+              top: offset.dy,
+              child: ScaleTransition(
+                scale: _scaleController,
+                child: _Thumb(
+                  size: widget.thumbSize,
+                  color: HSLColor.fromAHSL(1, widget.hue, 1, 0.5).toColor(),
+                ),
               ),
             ),
           ],
@@ -391,13 +444,6 @@ class _HuePickerState extends State<_HuePicker> with TickerProviderStateMixin {
   void initState() {
     super.initState();
 
-    final minSize = min(widget.size.width, widget.size.height);
-    _hueController = AnimationController(
-      vsync: this,
-      value: widget.initialHue * pi / 180,
-      lowerBound: 0,
-      upperBound: 2 * pi,
-    )..addListener(() => widget.onChanged(_hueController.value));
     _scaleController = AnimationController(
       vsync: this,
       value: 1,
@@ -405,22 +451,37 @@ class _HuePickerState extends State<_HuePicker> with TickerProviderStateMixin {
       upperBound: 1,
       duration: Duration(milliseconds: 50),
     );
-    _offset = _CircleTween(
-      minSize / 2 - widget.thumbSize / 2,
-    ).animate(_hueController);
   }
 
-  void _onPanStart(DragStartDetails details) {
+  void _onDown(DragDownDetails details) {
     _scaleController.reverse();
     _updatePosition(details.localPosition);
   }
 
-  void _onPanUpdate(DragUpdateDetails details) {
+  void _onStart(DragStartDetails details) {
+    _cancelTimer?.cancel();
+    _cancelTimer = null;
     _updatePosition(details.localPosition);
   }
 
-  void _onPanEnd(DragEndDetails details) {
+  void _onUpdate(DragUpdateDetails details) {
+    _updatePosition(details.localPosition);
+  }
+
+  void _onEnd(DragEndDetails details) {
     _scaleController.forward();
+    widget.onEnded();
+  }
+
+  void _onCancel() {
+    // ScaleDown Animation cancelled if onDragStart called immediately
+    _cancelTimer = Timer(
+      const Duration(milliseconds: 5),
+      () {
+        _scaleController.forward();
+        widget.onEnded();
+      },
+    );
   }
 
   void _updatePosition(Offset position) {
@@ -428,7 +489,7 @@ class _HuePickerState extends State<_HuePicker> with TickerProviderStateMixin {
       position.dy - widget.size.height / 2,
       position.dx - widget.size.width / 2,
     );
-    _hueController.value = radians % (2 * pi);
+    widget.onChanged(radians % (2 * pi) * 180 / pi);
   }
 }
 
@@ -495,7 +556,11 @@ class _CirclePickerPainter extends CustomPainter {
 }
 
 class _Thumb extends StatelessWidget {
-  const _Thumb({Key key, this.size, this.color}) : super(key: key);
+  const _Thumb({
+    Key? key,
+    required this.size,
+    required this.color,
+  }) : super(key: key);
 
   final double size;
 
